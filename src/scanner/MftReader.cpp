@@ -1,6 +1,7 @@
 #ifdef PLATFORM_WINDOWS
 
 #include "MftReader.hpp"
+#include "MftFlatEntry.hpp"
 
 #include <windows.h>
 #include <cstring>
@@ -128,7 +129,8 @@ bool enableVolumeReadPrivilege(const char* privilegeName) {
 // MftReader::read
 // ─────────────────────────────────────────────────────────────────────────────
 
-std::shared_ptr<FileNode> MftReader::read(const Config& cfg) {
+std::shared_ptr<FileNode> MftReader::read(const Config& cfg,
+                                          std::vector<MftFlatEntry>* flatEntries) {
     // NTFS volume reads require backup/restore privilege even for Administrators.
     enableVolumeReadPrivilege(SE_BACKUP_NAME);
     enableVolumeReadPrivilege(SE_RESTORE_NAME);
@@ -184,7 +186,6 @@ std::shared_ptr<FileNode> MftReader::read(const Config& cfg) {
         static_cast<uint64_t>(volumeData.MftValidDataLength.QuadPart) / bytesPerFrs;
 
     // ── 4. Iterate all MFT records ────────────────────────────────────────────
-    // We store a flat map: MFT record# (48-bit) → {name, parentRef, allocSize, isDir}
     struct FlatEntry {
         std::string name;
         uint64_t    parentRef  = 0;
@@ -339,70 +340,27 @@ std::shared_ptr<FileNode> MftReader::read(const Config& cfg) {
 
     if (cfg.progressCb) cfg.progressCb(filesProcessed);
 
-    // ── 5. Build tree ─────────────────────────────────────────────────────────
-    // Ensure we have a root (record 5) even if the FSCTL walk didn't surface it
-    // with a name (some volumes / privilege levels behave oddly for the root dir record).
-    if (entries.find(5) == entries.end()) {
-        FlatEntry rootFe;
-        rootFe.name = cfg.volumePath + "\\";
-        rootFe.isDir = true;
-        rootFe.inUse = true;
-        entries[5] = rootFe;
+    std::vector<MftFlatEntry> exportedEntries;
+    exportedEntries.reserve(entries.size());
+    for (const auto& [id, fe] : entries) {
+        MftFlatEntry entry;
+        entry.mftId = id;
+        entry.name = fe.name;
+        entry.parentMftId = fe.parentRef & 0x0000FFFFFFFFFFFFULL;
+        entry.allocSize = fe.allocSize;
+        entry.isDir = fe.isDir;
+        exportedEntries.push_back(std::move(entry));
     }
 
-    std::unordered_map<uint64_t, std::shared_ptr<FileNode>> nodes;
-    nodes.reserve(entries.size());
-
-    for (auto& [id, fe] : entries) {
-        auto node       = std::make_shared<FileNode>();
-        node->name      = fe.name;
-        node->sizeBytes = fe.allocSize;
-        node->type      = fe.isDir ? NodeType::Directory : NodeType::File;
-        nodes[id]       = node;
+    if (flatEntries) {
+        *flatEntries = exportedEntries;
     }
 
-    // Root of the requested path (record 5 is always the NTFS root dir)
-    // Link children to parents
-    std::shared_ptr<FileNode> root;
-    for (auto& [id, fe] : entries) {
-        if (!nodes.count(id)) continue;
-        auto& child = nodes[id];
-        uint64_t parentId = (fe.parentRef & 0x0000FFFFFFFFFFFFULL);
-        if (parentId == id || !nodes.count(parentId)) {
-            // orphan or root
-            if (id == 5) { // NTFS root directory record (always force a nice name)
-                root = child;
-                root->name = cfg.volumePath + "\\";
-            }
-            continue;
-        }
-        auto& parent = nodes[parentId];
-        child->parent = parent.get();
-        child->depth  = parent->depth + 1;
-        parent->children.push_back(child);
-    }
-
+    auto root = buildMftTree(exportedEntries, cfg.volumePath, cfg.errorMessage);
     if (!root) {
-        setError(cfg, "MFT read completed but no NTFS root record was found");
-        // Fallback: pick a node with no valid parent
-        for (auto& [id, nd] : nodes) {
-            if (!nd->parent) { root = nd; break; }
-        }
-    }
-
-    if (root) {
-        root->computeSizes();
-        root->sortChildren();
-        root->path = cfg.volumePath + "\\";
-        // propagate paths (best-effort)
-        std::function<void(FileNode*, const std::string&)> setPaths =
-            [&](FileNode* n, const std::string& base) {
-            for (auto& c : n->children) {
-                c->path = base + c->name + (c->isDir() ? "\\" : "");
-                setPaths(c.get(), c->path);
-            }
-        };
-        setPaths(root.get(), root->path);
+        setError(cfg, cfg.errorMessage && !cfg.errorMessage->empty()
+                           ? *cfg.errorMessage
+                           : "MFT read completed but no NTFS root record was found");
     }
 
     return root;

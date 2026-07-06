@@ -3,10 +3,12 @@
 #ifdef PLATFORM_WINDOWS
 
 #include "model/FileNode.hpp"
+#include "scanner/MftFlatEntry.hpp"
 #include <functional>
 #include <memory>
 #include <string>
 #include <atomic>
+#include <vector>
 
 namespace diskscan {
 
@@ -31,7 +33,9 @@ public:
 
     /// Build a complete FileNode tree for the volume.
     /// Returns nullptr on failure (no admin, non-NTFS, broken, etc.).
-    static std::shared_ptr<FileNode> read(const Config& cfg);
+    /// When `flatEntries` is non-null, the raw MFT rows are returned for caching.
+    static std::shared_ptr<FileNode> read(const Config& cfg,
+                                          std::vector<MftFlatEntry>* flatEntries = nullptr);
 
 private:
     // -----------------------------------------------------------------

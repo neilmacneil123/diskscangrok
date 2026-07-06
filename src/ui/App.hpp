@@ -59,7 +59,7 @@ private:
     void goToPickerParent();
     void beginScan(std::string path);
 
-    void startScan();
+    void startScan(bool forceRescan = false);
     void onScanProgress(const ScanProgress& p);
     void rebuildIndex();
     void refreshSearch();

@@ -3,6 +3,8 @@
 #ifdef PLATFORM_WINDOWS
 #  include <windows.h>
 #  include "MftReader.hpp"
+#  include "MftCache.hpp"
+#  include "MftFlatEntry.hpp"
 #  include "util/WindowsPath.hpp"
 #else
 #  include <sys/stat.h>
@@ -247,8 +249,9 @@ std::shared_ptr<FileNode> scanWithWin32DirectoryWalker(const std::string& scanRo
 } // namespace
 #endif
 
-Scanner::Scanner(std::string rootPath)
-    : rootPath_(std::move(rootPath)) {}
+Scanner::Scanner(std::string rootPath, bool forceRescan)
+    : rootPath_(std::move(rootPath))
+    , forceRescan_(forceRescan) {}
 
 Scanner::~Scanner() {
     abort();
@@ -307,28 +310,92 @@ void Scanner::workerFn(ProgressCb cb) {
     };
 
     if (canTryMft && !mftReaderDisabled()) {
-        prog.scanMethod = "MFT";
-        prog.currentPath = "Opening NTFS volume " + cfg.volumePath;
-        if (cb) cb(prog);
+        const uint64_t volumeSerial = MftCache::volumeSerial(cfg.volumePath);
+        std::vector<MftFlatEntry> cachedEntries;
+        std::string cacheError;
+        bool usedCache = false;
+        std::string mftScanMethod = "MFT";
 
-        auto volumeRoot = MftReader::read(cfg);
-        if (volumeRoot) {
-            root_ = findNodeByPath(volumeRoot, scanRoot);
-            if (root_) {
-                root_->parent = nullptr;
-                root_->expanded = true;
-                resetTreeDepths(root_.get(), 0);
-                // Fill zero sizes from filesystem (MFT size extraction can be incomplete)
-                fillSizesFromFilesystem(root_.get());
-                root_->computeSizes();
-                root_->sortChildren();
-                if (root_->children.empty()) {
-                    mftError = "MFT read returned no entries under " + scanRoot;
-                    root_.reset();
+        if (!forceRescan_ && MftCache::enabled() && volumeSerial != 0 &&
+            MftCache::load(cfg.volumePath, volumeSerial, cachedEntries, nullptr, &cacheError)) {
+            mftScanMethod = "MFT (cached)";
+            prog.scanMethod = mftScanMethod;
+            prog.currentPath = "Loading cached MFT for " + cfg.volumePath;
+            if (cb) cb(prog);
+
+            auto volumeRoot = buildMftTree(cachedEntries, cfg.volumePath, &mftError);
+            if (volumeRoot) {
+                usedCache = true;
+                mftScanMethod = "MFT (cached)";
+                root_ = findNodeByPath(volumeRoot, scanRoot);
+                if (root_) {
+                    root_->parent = nullptr;
+                    root_->expanded = true;
+                    resetTreeDepths(root_.get(), 0);
+                    fillSizesFromFilesystem(root_.get());
+                    root_->computeSizes();
+                    root_->sortChildren();
+                    if (root_->children.empty()) {
+                        mftError = "Cached MFT returned no entries under " + scanRoot;
+                        root_.reset();
+                        usedCache = false;
+                    }
+                } else {
+                    mftError = "Cached MFT tree did not contain requested root " + scanRoot;
+                    usedCache = false;
                 }
             } else {
-                mftError = "MFT tree did not contain requested root " + scanRoot;
+                usedCache = false;
             }
+        }
+
+        if (!usedCache) {
+            if (forceRescan_ && MftCache::enabled()) {
+                MftCache::invalidate(cfg.volumePath);
+            }
+
+            mftScanMethod = "MFT";
+            prog.scanMethod = mftScanMethod;
+            prog.currentPath = "Opening NTFS volume " + cfg.volumePath;
+            if (cb) cb(prog);
+
+            std::vector<MftFlatEntry> freshEntries;
+            auto volumeRoot = MftReader::read(cfg, &freshEntries);
+            if (volumeRoot && MftCache::enabled() && volumeSerial != 0 && !freshEntries.empty()) {
+                std::string saveError;
+                if (!MftCache::save(cfg.volumePath, volumeSerial, freshEntries, &saveError)) {
+                    prog.warningMessage = "MFT cache save failed: " + saveError;
+                }
+            }
+            if (volumeRoot) {
+                root_ = findNodeByPath(volumeRoot, scanRoot);
+                if (root_) {
+                    root_->parent = nullptr;
+                    root_->expanded = true;
+                    resetTreeDepths(root_.get(), 0);
+                    // Fill zero sizes from filesystem (MFT size extraction can be incomplete)
+                    fillSizesFromFilesystem(root_.get());
+                    root_->computeSizes();
+                    root_->sortChildren();
+                    if (root_->children.empty()) {
+                        mftError = "MFT read returned no entries under " + scanRoot;
+                        root_.reset();
+                    }
+                } else {
+                    mftError = "MFT tree did not contain requested root " + scanRoot;
+                }
+            }
+        }
+
+        if (root_) {
+            prog.done = true;
+            prog.scanMethod = mftScanMethod;
+            prog.filesFound = countNodes(root_);
+            prog.bytesAccounted = root_->sizeBytes;
+            prog.currentPath = root_->path;
+            running_ = false;
+            if (cb) cb(prog);
+            return;
         }
     }
 
@@ -350,15 +417,6 @@ void Scanner::workerFn(ProgressCb cb) {
         if (cb) cb(prog);
         goto stdfs_walk;
     }
-
-    prog.done = true;
-    prog.scanMethod = "MFT";
-    prog.filesFound = countNodes(root_);
-    prog.bytesAccounted = root_ ? root_->sizeBytes : 0;
-    prog.currentPath = root_ ? root_->path : scanRoot;
-    running_ = false;
-    if (cb) cb(prog);
-    return;
 
 stdfs_walk:;
     // fall through to std::filesystem traversal (shared with POSIX below)

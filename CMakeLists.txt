@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(diskscangrok VERSION 0.1.0 LANGUAGES CXX)
+project(diskscangrok VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,12 +18,31 @@ set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(FTXUI_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(ftxui)
 
+if(WIN32)
+  FetchContent_Declare(
+    sqlite3
+    GIT_REPOSITORY https://github.com/azadkuh/sqlite-amalgamation.git
+    GIT_TAG        3.38.2
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_GetProperties(sqlite3)
+  if(NOT sqlite3_POPULATED)
+    FetchContent_Populate(sqlite3)
+    add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
+    target_include_directories(sqlite3 PUBLIC ${sqlite3_SOURCE_DIR})
+    if(MSVC)
+      target_compile_options(sqlite3 PRIVATE /W0)
+    endif()
+  endif()
+endif()
+
 # ── Sources ───────────────────────────────────────────────────────────────────
 set(SOURCES
   src/main.cpp
   src/model/FileNode.cpp
   src/scanner/Scanner.cpp
   src/scanner/MftReader.cpp
+  src/scanner/MftFlatEntry.cpp
   src/search/FileIndex.cpp
   src/search/Search.cpp
   src/ui/App.cpp
@@ -43,6 +62,11 @@ target_link_libraries(diskscangrok PRIVATE
   ftxui::dom
   ftxui::component
 )
+
+if(WIN32)
+  target_sources(diskscangrok PRIVATE src/scanner/MftCache.cpp)
+  target_link_libraries(diskscangrok PRIVATE sqlite3)
+endif()
 
 # ── Compiler / linker flags ───────────────────────────────────────────────────
 if(MSVC)
@@ -97,11 +121,14 @@ if(BUILD_TESTING)
     src/model/FileNode.cpp
     src/scanner/Scanner.cpp
     src/scanner/MftReader.cpp
+    src/scanner/MftFlatEntry.cpp
     src/util/WindowsPath.cpp
   )
   target_include_directories(scanner_smoke_test PRIVATE src)
   if(WIN32)
+    target_sources(scanner_smoke_test PRIVATE src/scanner/MftCache.cpp)
     target_compile_definitions(scanner_smoke_test PRIVATE PLATFORM_WINDOWS)
+    target_link_libraries(scanner_smoke_test PRIVATE sqlite3)
   else()
     target_compile_definitions(scanner_smoke_test PRIVATE PLATFORM_POSIX)
     target_link_libraries(scanner_smoke_test PRIVATE pthread)

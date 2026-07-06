@@ -27,7 +27,7 @@ using ProgressCb = std::function<void(const ScanProgress&)>;
 /// otherwise uses reliable Win32 / POSIX directory walking with allocated sizes.
 class Scanner {
 public:
-    explicit Scanner(std::string rootPath);
+    explicit Scanner(std::string rootPath, bool forceRescan = false);
     ~Scanner();
 
     /// Start an async scan.  `cb` is called from the worker thread.
@@ -45,6 +45,7 @@ private:
     void                      workerFn(ProgressCb cb);
 
     std::string               rootPath_;
+    bool                      forceRescan_ = false;
     std::shared_ptr<FileNode> root_;
     std::thread               worker_;
     std::atomic<bool>         running_{false};

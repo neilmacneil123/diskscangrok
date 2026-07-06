@@ -93,8 +93,8 @@ App::~App() {
 // Scan lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
 
-void App::startScan() {
-    scanner_ = std::make_unique<Scanner>(rootPath_);
+void App::startScan(bool forceRescan) {
+    scanner_ = std::make_unique<Scanner>(rootPath_, forceRescan);
     scanner_->start([this](const ScanProgress& p) {
         onScanProgress(p);
     });
@@ -756,7 +756,7 @@ int App::run() {
             screen_.ExitLoopClosure()();
             return true;
         }
-        // 'r' → rescan
+        // 'r' → rescan (bypasses cached MFT and refreshes the local database)
         if (e == Event::Character('r')) {
             if (scanner_) scanner_->abort();
             root_ = nullptr;
@@ -767,7 +767,7 @@ int App::run() {
             searchSummary_.clear();
             searchFocused_ = false;
             contentTab_ = 0;
-            startScan();
+            startScan(true);
             return true;
         }
         return false;
