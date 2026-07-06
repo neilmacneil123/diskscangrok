@@ -306,6 +306,27 @@ void App::refreshSearch() {
     contentTab_ = 1;
 }
 
+void App::leaveSearchInput() {
+    searchFocused_ = false;
+    if (contentTab_ == 1) {
+        searchView_.notifySelection();
+    }
+}
+
+bool App::isSearchNavigationEvent(const Event& e) const {
+    return e == Event::ArrowDown || e == Event::ArrowUp ||
+           e == Event::Character('j') || e == Event::Character('k') ||
+           e == Event::PageDown || e == Event::PageUp ||
+           e == Event::Home || e == Event::End;
+}
+
+bool App::routeSearchResultsEvent(const Event& e) {
+    if (contentTab_ != 1 || searchQuery_.empty()) {
+        return false;
+    }
+    return searchView_.handleEvent(e);
+}
+
 const IndexEntry* App::activeSearchEntry() const {
     if (contentTab_ != 1) return nullptr;
     return searchView_.selectedEntry();
@@ -479,11 +500,15 @@ Element App::renderSearchBar() const {
         ? text("type to filter (audio: video: pictures: documents: compressed: executable: folders:)") |
               color(Color::GrayDark)
         : text(searchQuery_) | color(Color::White);
+    const bool resultsActive = !searchQuery_.empty() && !searchFocused_;
     auto cursor = searchFocused_ ? text("_") | blink : text("");
+    auto mode = resultsActive
+        ? text("  [RESULTS] ") | bold | color(Color::Green)
+        : (searchFocused_ ? text("  [TYPING] ") | bold | color(Color::Yellow) : text(""));
 
     Elements right;
     if (searchFocused_) {
-        right.push_back(text("  Enter/Tab/↓ go to results  Esc cancel  ") | color(Color::GrayDark));
+        right.push_back(text("  Enter or ↓/jk to browse results  Esc cancel  ") | color(Color::GrayDark));
     } else if (!searchSummary_.empty()) {
         right.push_back(text(searchSummary_ + " matches") | color(Color::Yellow));
         right.push_back(text("  ↑↓/jk nav  / edit  d del  c copy  m move  Esc clear  ") |
@@ -494,8 +519,9 @@ Element App::renderSearchBar() const {
         prompt,
         query,
         cursor,
+        mode,
         hbox(std::move(right)) | flex | align_right,
-    }) | bgcolor(Color::RGB(25, 25, 45));
+    }) | bgcolor(searchFocused_ ? Color::RGB(35, 30, 55) : Color::RGB(25, 25, 45));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -676,23 +702,22 @@ int App::run() {
 
         if (e == Event::Character('/')) {
             searchFocused_ = true;
+            if (!searchQuery_.empty()) {
+                contentTab_ = 1;
+            }
+            return true;
+        }
+
+        if (contentTab_ == 1 && !searchQuery_.empty() && isSearchNavigationEvent(e)) {
+            searchFocused_ = false;
+            routeSearchResultsEvent(e);
             return true;
         }
 
         if (searchFocused_) {
-            if (e == Event::Return || e == Event::Tab) {
-                searchFocused_ = false;
-                if (contentTab_ == 1) {
-                    searchView_.notifySelection();
-                }
+            if (e == Event::Return || e == Event::Tab || e == Event::Character('\t')) {
+                leaveSearchInput();
                 return true;
-            }
-            if (e == Event::ArrowDown || e == Event::ArrowUp ||
-                e == Event::Character('j') || e == Event::Character('k') ||
-                e == Event::PageDown || e == Event::PageUp ||
-                e == Event::Home || e == Event::End) {
-                searchFocused_ = false;
-                return false;
             }
             if (e == Event::Escape) {
                 searchQuery_.clear();

@@ -9,6 +9,7 @@
 #include "ui/StatusBar.hpp"
 
 #include <ftxui/component/component.hpp>
+#include <ftxui/component/event.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 
 #include <memory>
@@ -62,6 +63,9 @@ private:
     void onScanProgress(const ScanProgress& p);
     void rebuildIndex();
     void refreshSearch();
+    void leaveSearchInput();
+    bool isSearchNavigationEvent(const ftxui::Event& event) const;
+    bool routeSearchResultsEvent(const ftxui::Event& event);
     void beginDeleteConfirm();
     void beginDestinationPicker(FileAction action);
     void cancelPendingAction();

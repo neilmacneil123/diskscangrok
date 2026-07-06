@@ -22,34 +22,38 @@ std::string parentPath(const std::string& path) {
 
 } // namespace
 
+bool SearchView::handleEvent(const Event& e) {
+    if (results_.empty()) return false;
+
+    const int before = cursor_;
+    if (e == Event::ArrowUp || e == Event::Character('k')) {
+        if (cursor_ > 0) { --cursor_; }
+    } else if (e == Event::ArrowDown || e == Event::Character('j')) {
+        if (cursor_ < (int)results_.size() - 1) { ++cursor_; }
+    } else if (e == Event::PageUp) {
+        cursor_ = std::max(0, cursor_ - 20);
+    } else if (e == Event::PageDown) {
+        cursor_ = std::min((int)results_.size() - 1, cursor_ + 20);
+    } else if (e == Event::Home) {
+        cursor_ = 0;
+    } else if (e == Event::End) {
+        cursor_ = (int)results_.size() - 1;
+    } else {
+        return false;
+    }
+
+    if (cursor_ != before) {
+        if (onNavigate) {
+            onNavigate();
+        }
+        notifySelection();
+    }
+    return true;
+}
+
 SearchView::SearchView() {
     comp_ = Renderer([this] { return render(0); }) | CatchEvent([this](Event e) -> bool {
-        if (results_.empty()) return false;
-
-        const int before = cursor_;
-        if (e == Event::ArrowUp || e == Event::Character('k')) {
-            if (cursor_ > 0) { --cursor_; }
-        } else if (e == Event::ArrowDown || e == Event::Character('j')) {
-            if (cursor_ < (int)results_.size() - 1) { ++cursor_; }
-        } else if (e == Event::PageUp) {
-            cursor_ = std::max(0, cursor_ - 20);
-        } else if (e == Event::PageDown) {
-            cursor_ = std::min((int)results_.size() - 1, cursor_ + 20);
-        } else if (e == Event::Home) {
-            cursor_ = 0;
-        } else if (e == Event::End) {
-            cursor_ = (int)results_.size() - 1;
-        } else {
-            return false;
-        }
-
-        if (cursor_ != before) {
-            if (onNavigate) {
-                onNavigate();
-            }
-            notifySelection();
-        }
-        return true;
+        return handleEvent(e);
     });
 }
 

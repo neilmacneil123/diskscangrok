@@ -4,6 +4,7 @@
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_base.hpp>
+#include <ftxui/component/event.hpp>
 #include <ftxui/dom/elements.hpp>
 
 #include <functional>
@@ -23,6 +24,7 @@ public:
 
     const IndexEntry* selectedEntry() const;
     void notifySelection();
+    bool handleEvent(const ftxui::Event& event);
 
     std::function<void(const IndexEntry*)> onSelect;
     std::function<void()> onNavigate;
