@@ -69,14 +69,21 @@ void StatusBar::setSelected(const std::string& path, uint64_t bytes) {
     selectedBytes_ = bytes;
 }
 
+void StatusBar::setActionMessage(const std::string& message, bool isError) {
+    actionMessage_ = message;
+    actionError_   = isError;
+}
+
 Element StatusBar::render() const {
     auto keyHints = hbox({
-        text(" ↑↓") | bold,
-        text(" nav "),
-        text("Enter") | bold,
-        text(" expand "),
-        text("←→") | bold,
-        text(" collapse/expand "),
+        text("/") | bold,
+        text(" search "),
+        text("d") | bold,
+        text(" del "),
+        text("c") | bold,
+        text(" copy "),
+        text("m") | bold,
+        text(" move "),
         text("r") | bold,
         text(" rescan "),
         text("q") | bold,
@@ -98,10 +105,18 @@ Element StatusBar::render() const {
     auto statusColor = error_ ? Color::Red : (done_ ? Color::Green : Color::Yellow);
     auto scanStatus = text(" " + statusText_ + " ") | color(statusColor);
 
+    Elements center;
+    if (!actionMessage_.empty()) {
+        center.push_back(text(" " + actionMessage_ + " ") |
+                         color(actionError_ ? Color::Red : Color::Green));
+        center.push_back(separator());
+    }
+    center.push_back(selInfo | flex);
+
     return hbox({
         scanStatus,
         separator(),
-        selInfo | flex,
+        hbox(std::move(center)) | flex,
         separator(),
         keyHints,
     }) | bgcolor(Color::RGB(30, 30, 30));

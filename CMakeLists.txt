@@ -24,10 +24,14 @@ set(SOURCES
   src/model/FileNode.cpp
   src/scanner/Scanner.cpp
   src/scanner/MftReader.cpp
+  src/search/FileIndex.cpp
+  src/search/Search.cpp
   src/ui/App.cpp
   src/ui/TreeView.cpp
+  src/ui/SearchView.cpp
   src/ui/StatusBar.cpp
   src/util/WindowsPath.cpp
+  src/util/FileOperations.cpp
 )
 
 add_executable(diskscangrok ${SOURCES})
@@ -78,6 +82,15 @@ if(BUILD_TESTING)
   )
   target_include_directories(windows_path_test PRIVATE src)
   add_test(NAME windows_path_test COMMAND windows_path_test)
+
+  add_executable(search_test
+    tests/SearchTest.cpp
+    src/model/FileNode.cpp
+    src/search/FileIndex.cpp
+    src/search/Search.cpp
+  )
+  target_include_directories(search_test PRIVATE src)
+  add_test(NAME search_test COMMAND search_test)
 
   add_executable(scanner_smoke_test
     tests/ScannerSmokeTest.cpp
