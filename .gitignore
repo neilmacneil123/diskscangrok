@@ -1,0 +1,47 @@
+# Build
+build/
+build-*/
+dist/
+out/
+*.exe
+*.pdb
+*.ilk
+*.obj
+*.o
+*.tlog
+*.log
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+cmake-build-*/
+CTestTestfile.cmake
+DartConfiguration.tcl
+install_manifest.txt
+CPack*Config.cmake
+
+# IDE / tools
+.vs/
+.vscode/
+*.suo
+*.user
+*.sln.docstates
+compile_commands.json
+
+# Generated
+*.aps
+*.ncb
+*.sdf
+*.opensdf
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Misc
+*.tmp
+*.bak
+*.swp
+*~
